@@ -82,4 +82,3 @@ module stream_pay::liner_pay {
 
     // step4 boss 查询余额
 }
-git remote add origin git@github.com:yjshi2015/stream_pay.git
