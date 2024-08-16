@@ -11,7 +11,11 @@ module stream_pay::liner_pay {
     const EDonotEnoughMoney: u64 = 0;
     const EStreamExisted: u64 = 1;
     const EAmountPerSecInvalid: u64 = 2;
+    const EStreamNotExisted: u64 = 3;
 
+    // todo envent 
+
+    
     // 支付者（Boss）
     public struct Payer has key, store{
         id: UID,
@@ -103,23 +107,50 @@ module stream_pay::liner_pay {
     }
 
     // step3 雇员领取工资
-    public entry fun withdraw(payer: &mut Payer, reciver: &mut Reciver, clock: &Clock, ctx: &mut TxContext) {
-        settlement(payer, clock);
+    public entry fun withdraw(payer: &mut Payer, reciver: &mut Reciver, amount_per_sec: u64, clock: &Clock, ctx: &mut TxContext) {
 
-        let reciver_delta = clock.timestamp_ms() - reciver.r_last_settlement_time;
-        let income = reciver_delta * reciver.r_amount_per;
+        // 支付流必须存在
+        let streamId = getStreamId(payer.owner, reciver.recipient, amount_per_sec);
+        assert!(payer.stream_ids.contains(&streamId), EStreamNotExisted);
+
+        // payer 结算，并得到结算的时间点 last_upate
+        let last_upate =settlement(payer, clock);
+
+        // 领取工资
+        let delta = last_upate - reciver.r_last_settlement_time;
+        let income = delta * reciver.r_amount_per;
         let income_coin = payer.p_debt.split(income);
         transfer::public_transfer(income_coin.into_coin(ctx), reciver.recipient);
-        reciver.r_last_settlement_time = clock.timestamp_ms();
+        // 更新结算时间
+        reciver.r_last_settlement_time = last_upate;
     }
 
-    public fun settlement(payer: &mut Payer, clock: &Clock) {
+    fun settlement(payer: &mut Payer, clock: &Clock): u64 {
         let delta = clock.timestamp_ms() - payer.p_last_settlement_time;
+        // 计算应支付的费用
         let ready_pay  = delta * payer.p_total_paid_amount_per;
-        assert!(payer.p_balance.value() >= ready_pay, EDonotEnoughMoney);
-        let ready_pay_coin = payer.p_balance.split(ready_pay);
-        payer.p_debt.join(ready_pay_coin);
-        payer.p_last_settlement_time = clock.timestamp_ms();
+
+        // todo event 
+        // 如果余额足够支付
+        if (payer.p_balance.value() >= ready_pay) {
+            let ready_pay_coin = payer.p_balance.split(ready_pay);
+            payer.p_debt.join(ready_pay_coin);
+            payer.p_last_settlement_time = clock.timestamp_ms();
+        } else {
+            // 计算能够支付多少秒的总费用
+            let timePaid = payer.p_balance.value() / payer.p_total_paid_amount_per;
+            payer.p_last_settlement_time = payer.p_last_settlement_time + timePaid;
+
+            // 计算 payer 结算后的余额
+            let payer_balance = payer.p_balance.value() % payer.p_total_paid_amount_per;
+            // 计算 payer 应支付的费用
+            let ready_pay = payer.p_balance.value() - payer_balance;
+            let ready_pay_coin = payer.p_balance.split(ready_pay);
+            // 应支付的费用转入到 p_debt 字段
+            payer.p_debt.join(ready_pay_coin);
+        };
+
+        payer.p_last_settlement_time
     }
 
     // step4 boss 查询余额
