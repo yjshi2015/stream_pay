@@ -8,15 +8,16 @@ module stream_pay::liner_pay {
     use sui::hash;
     use sui::vec_set::{Self, VecSet};
 
-    const EDonotEnoughMoney: u64 = 0;
     const EStreamExisted: u64 = 1;
     const EAmountPerSecInvalid: u64 = 2;
     const EStreamNotExisted: u64 = 3;
+    const EDoNotRug: u64 = 4;
+    const ENotAuth: u64 = 5;
 
     // todo envent 
 
     
-    // 支付者（Boss）
+    // 支付者（Boss）——> Payer Pool
     public struct Payer has key, store{
         id: UID,
         // the balance of payer
@@ -32,7 +33,7 @@ module stream_pay::liner_pay {
         p_total_paid_amount_per: u64,
     }
 
-    // 接收者（自由职业者）
+    // 接收者（自由职业者）--> Reciver Card
     public struct Reciver has key, store {
         id: UID,
         // payer address
@@ -79,6 +80,8 @@ module stream_pay::liner_pay {
 
     // step2 boss 创建自动支付流
     public entry fun createStream(payer: &mut Payer, recipient: address, amount_per_sec: u64, clock: &Clock, ctx: &mut TxContext) {
+        // 必须是 payer owner 才可以创建支付流，因为 payer 是共享对象，因此需要显式控制权限
+        assert!(payer.owner == ctx.sender(), ENotAuth);
         assert!(amount_per_sec > 0, EAmountPerSecInvalid);
 
         // 判断是否已存在，不允许重复创建（key: payer + recipient + amount)
@@ -154,4 +157,42 @@ module stream_pay::liner_pay {
     }
 
     // step4 boss 查询余额
+    public entry fun getPayerBalance(payer: &Payer, clock: &Clock): u64 {
+        // 结算前余额
+        let p_balance = payer.p_balance.value();
+        let delta = clock.timestamp_ms() - payer.p_last_settlement_time;
+        // 计算应支付的费用
+        let ready_pay = delta * payer.p_total_paid_amount_per;
+
+        // 实际余额 = 结算前余额 - 应支付的费用
+        p_balance - ready_pay
+    }
+
+    // step5 payer 提取余额
+    public entry fun withdrawPayer(payer: &mut Payer, amount: u64, clock: &Clock, ctx: &mut TxContext) {
+        // 必须是 payer owner 才可以提取，因为 payer 是共享对象，因此需要显式控制权限
+        assert!(payer.owner == ctx.sender(), ENotAuth);
+        // 提取的数量要小于当前余额
+        assert!(payer.p_balance.value() >= amount, EDoNotRug);
+        
+        // 提取后的余额要满足结算要求
+        let withdraw_coin = payer.p_balance.split(amount);
+        let delta = clock.timestamp_ms() - payer.p_last_settlement_time;
+        assert!(payer.p_balance.value() >= delta * payer.p_total_paid_amount_per, EDoNotRug);
+
+        // 提取后的余额转入到 payer 账户
+        transfer::public_transfer(withdraw_coin.into_coin(ctx), payer.owner);
+    }
+
+    // step5 payer 提取所有余额
+    public entry fun withdrawPayerAll(payer: &mut Payer, clock: &Clock, ctx: &mut TxContext) {
+        // 必须是 payer owner 才可以提取，因为 payer 是共享对象，因此需要显式控制权限
+        assert!(payer.owner == ctx.sender(), ENotAuth);
+
+        let delta = clock.timestamp_ms() - payer.p_last_settlement_time;
+        assert!(payer.p_balance.value() >= delta * payer.p_total_paid_amount_per, EDoNotRug);
+
+        let withdraw_amount = payer.p_balance.value() - (delta * payer.p_total_paid_amount_per);
+        withdrawPayer(payer, withdraw_amount, clock, ctx);
+    }
 }
