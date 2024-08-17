@@ -195,4 +195,32 @@ module stream_pay::liner_pay {
         let withdraw_amount = payer.p_balance.value() - (delta * payer.p_total_paid_amount_per);
         withdrawPayer(payer, withdraw_amount, clock, ctx);
     }
+
+
+    // step6 取消支付流
+    // 输入的参数依赖于 ptb 获取的 Reciver 信息
+    public entry fun cancelStream(payer: &mut Payer, recipient: address, amount_per_sec: u64, last_settlement_time: u64, clock: &Clock, ctx: &mut TxContext) {
+        // 1.权限控制，必须是 payer owner 才可以取消支付流，因为 payer 是共享对象，因此需要显式控制权限
+        assert!(payer.owner == ctx.sender(), ENotAuth);
+
+        // 2.先结算
+        // 2.1 支付流必须存在
+        let streamId = getStreamId(payer.owner, recipient, amount_per_sec);
+        assert!(payer.stream_ids.contains(&streamId), EStreamNotExisted);
+
+        // 2.2 payer 结算，并得到结算的时间点 last_upate
+        let last_upate =settlement(payer, clock);
+
+        // 2.3 recipient 领取截止到 last_upate 的工资
+        let delta = last_upate - last_settlement_time;
+        let income = delta * amount_per_sec;
+        let income_coin = payer.p_debt.split(income);
+        transfer::public_transfer(income_coin.into_coin(ctx), recipient);
+        
+        // 3.删除支付流
+        payer.stream_ids.remove(&streamId);
+
+        // 4.扣除支付总额
+        payer.p_total_paid_amount_per = payer.p_total_paid_amount_per - amount_per_sec;
+    }
 }
