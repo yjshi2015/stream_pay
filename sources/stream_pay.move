@@ -245,7 +245,7 @@ module stream_pay::liner_pay {
     use std::string::{utf8};
 
     #[test]
-    fun test_createAndDeposit() {
+    fun test_liner_pay() {
         let alice: address = @100;
         let bob: address = @101;
         let eve: address = @102;
@@ -406,6 +406,88 @@ module stream_pay::liner_pay {
             test_scenario::return_shared(payer_pool);
             scenario.return_to_sender(eve_reciver_card);
             scenario.return_to_sender<Coin<SUI>>(eve_coin);
+        };
+
+        scenario.next_tx(alice);
+
+        // test withdrawPayerAll
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 50);
+            withdrawPayerAll(&mut payer_pool, &my_clock , scenario.ctx());
+
+            my_clock.destroy_for_testing();
+            test_scenario::return_shared(payer_pool);
+        };
+
+        scenario.next_tx(alice);
+
+        {
+            let payer_pool = scenario.take_shared<PayerPool>();
+            debug::print(&utf8(b"50s ======================="));
+
+            let p_balance = payer_pool.p_balance.value();
+            debug::print(&utf8(b"50s p_balance"));
+            debug::print(&p_balance);
+            assert!(p_balance == 20, 13);
+
+            let p_debt = payer_pool.p_debt.value();
+            debug::print(&utf8(b"50s p_debt 欠 bob and eve"));
+            debug::print(&p_debt);
+            assert!(p_debt == 20, 14);
+
+            let alice_balance = scenario.take_from_sender<Coin<SUI>>();
+            let alice_balance_amout = alice_balance.value();
+            debug::print(&utf8(b"alice_balance_amout"));
+            debug::print(&alice_balance_amout);
+            assert!(alice_balance_amout == (100 * 10000 - 60), 15);
+
+            assert!(payer_pool.stream_ids.size() == 2, 16);
+            assert!(payer_pool.p_last_settlement_time == 40, 17);
+
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<Coin<SUI>>(alice_balance);
+        };
+
+        scenario.next_tx(alice);
+
+        // test cancelStream of bob
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 50);
+            cancelStream(&mut payer_pool, bob, 1, 20, &my_clock, scenario.ctx());
+
+            my_clock.destroy_for_testing();
+            test_scenario::return_shared(payer_pool);
+        };
+
+        scenario.next_tx(bob);
+        
+        {
+            let payer_pool = scenario.take_shared<PayerPool>();
+            debug::print(&utf8(b"cancelStream ======================="));
+
+            // bob SUI 余额变化
+            let bob_coin = scenario.take_from_sender<Coin<SUI>>();
+            let bob_coin_amout = bob_coin.value();
+            debug::print(&utf8(b"bob_coin_amout"));
+            debug::print(&bob_coin_amout);
+            // 或者 30
+            assert!(bob_coin_amout == 30, 13);
+
+
+            // steam_id 不存在
+            assert!(payer_pool.stream_ids.size() == 1, 14);
+
+            // payer total 变成 1
+            assert!(payer_pool.p_total_paid_amount_per == 1, 15);
+
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<Coin<SUI>>(bob_coin);
         };
 
         scenario.end();
