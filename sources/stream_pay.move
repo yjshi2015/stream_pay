@@ -7,6 +7,8 @@ module stream_pay::liner_pay {
     use sui::bcs;
     use sui::hash;
     use sui::vec_set::{Self, VecSet};
+    use sui::event;
+    use std::string::{String, utf8};
 
     const EStreamExisted: u64 = 1;
     const EAmountPerSecInvalid: u64 = 2;
@@ -14,7 +16,7 @@ module stream_pay::liner_pay {
     const EDoNotRug: u64 = 4;
     const ENotAuth: u64 = 5;
 
-    // todo envent 
+
 
     // description：按秒维度支付工资
     
@@ -54,6 +56,31 @@ module stream_pay::liner_pay {
         amount_per_sec: u64,
     }
 
+    public struct CreatePayerPool has copy, drop {
+        pool_id: ID,
+        owner: address,
+    }
+
+    public struct StreamAction has copy, drop {
+        stream_id: vector<u8>,
+        action_type: String,
+        payer: address,
+        p_total_paid_amount_per: u64,
+        p_last_settlement_time: u64,
+        recipient: address,
+        r_amount_per: u64,
+        r_last_settlement_time: u64,
+    }
+
+    public struct WithdrawAction has copy, drop {
+        stream_id: vector<u8>,
+        action_type: String,
+        from: address,
+        to: address,
+        amount: u64,
+        owe: bool,
+    }
+
     // step1 创建 Payer Pool 并预存薪资
     public entry fun createAndDeposit(amount: Coin<SUI>, ctx: &mut TxContext) {
         let payer_pool = PayerPool {
@@ -65,6 +92,8 @@ module stream_pay::liner_pay {
             p_last_settlement_time: 0,
             p_total_paid_amount_per: 0,
         };
+
+        event::emit(CreatePayerPool { pool_id: payer_pool.id.to_inner(), owner: payer_pool.owner });
 
         transfer::share_object(payer_pool);
     }
@@ -96,12 +125,13 @@ module stream_pay::liner_pay {
         payer_pool.stream_ids.insert(stream_id);
 
         // 创建接收者，并以当前时间作为最后结算时间
+        let r_last_settlement_time = clock.timestamp_ms()/1000;
         let reciver_card = ReciverCard {
             id: object::new(ctx),
             payer: payer_pool.owner,
             recipient: recipient,
             r_amount_per: amount_per_sec,
-            r_last_settlement_time: clock.timestamp_ms()/1000,
+            r_last_settlement_time,
         };
         transfer::transfer(reciver_card, recipient);
 
@@ -110,17 +140,28 @@ module stream_pay::liner_pay {
 
         // payer 增加总支付额度
         payer_pool.p_total_paid_amount_per = payer_pool.p_total_paid_amount_per + amount_per_sec;
+
+        event::emit(StreamAction {
+            stream_id,
+            action_type: utf8(b"create stream"),
+            payer: payer_pool.owner,
+            p_total_paid_amount_per: payer_pool.p_total_paid_amount_per,
+            p_last_settlement_time: payer_pool.p_last_settlement_time,
+            recipient,
+            r_amount_per: amount_per_sec,
+            r_last_settlement_time: r_last_settlement_time,
+        });
     }
 
     // step3 雇员领取工资
     public entry fun withdraw(payer_pool: &mut PayerPool, reciver_card: &mut ReciverCard, amount_per_sec: u64, clock: &Clock, ctx: &mut TxContext) {
 
         // 支付流必须存在
-        let streamId = getStreamId(payer_pool.owner, reciver_card.recipient, amount_per_sec);
-        assert!(payer_pool.stream_ids.contains(&streamId), EStreamNotExisted);
+        let stream_id = getStreamId(payer_pool.owner, reciver_card.recipient, amount_per_sec);
+        assert!(payer_pool.stream_ids.contains(&stream_id), EStreamNotExisted);
 
         // payer 结算，并得到结算的时间点 last_upate
-        let last_upate =settlement(payer_pool, clock);
+        let (last_upate, owe) =settlement(payer_pool, clock);
 
         // 领取工资
         let delta = last_upate - reciver_card.r_last_settlement_time;
@@ -129,14 +170,24 @@ module stream_pay::liner_pay {
         transfer::public_transfer(income_coin.into_coin(ctx), reciver_card.recipient);
         // 更新结算时间
         reciver_card.r_last_settlement_time = last_upate;
+
+        event::emit(WithdrawAction {
+            stream_id,
+            action_type: utf8(b"reciver withdraw"),
+            from: payer_pool.owner,
+            to: reciver_card.recipient,
+            amount: income,
+            owe,
+        });
     }
 
-    fun settlement(payer_pool: &mut PayerPool, clock: &Clock): u64 {
+    fun settlement(payer_pool: &mut PayerPool, clock: &Clock): (u64, bool) {
         let delta = clock.timestamp_ms()/1000 - payer_pool.p_last_settlement_time;
         // 计算应支付的费用
         let ready_pay  = delta * payer_pool.p_total_paid_amount_per;
 
-        // todo event 
+        let mut owe = false;
+
         // 如果余额足够支付
         if (payer_pool.p_balance.value() >= ready_pay) {
             let ready_pay_coin = payer_pool.p_balance.split(ready_pay);
@@ -154,9 +205,10 @@ module stream_pay::liner_pay {
             let ready_pay_coin = payer_pool.p_balance.split(ready_pay);
             // 应支付的费用转入到 p_debt 字段
             payer_pool.p_debt.join(ready_pay_coin);
+            owe = true;
         };
 
-        payer_pool.p_last_settlement_time
+        (payer_pool.p_last_settlement_time, owe)
     }
 
     // step4 boss 查询余额
@@ -189,6 +241,15 @@ module stream_pay::liner_pay {
 
         // 提取后的余额转入到 payer 账户
         transfer::public_transfer(withdraw_coin.into_coin(ctx), payer_pool.owner);
+
+        event::emit(WithdrawAction {
+            stream_id: vector::empty<u8>(),
+            action_type: utf8(b"payer withdraw"),
+            from: payer_pool.id.to_address(),
+            to: payer_pool.owner,
+            amount,
+            owe: false,
+        });
     }
 
     // step5 payer 提取所有余额
@@ -212,11 +273,11 @@ module stream_pay::liner_pay {
 
         // 2.先结算
         // 2.1 支付流必须存在
-        let streamId = getStreamId(payer_pool.owner, recipient, amount_per_sec);
-        assert!(payer_pool.stream_ids.contains(&streamId), EStreamNotExisted);
+        let stream_id = getStreamId(payer_pool.owner, recipient, amount_per_sec);
+        assert!(payer_pool.stream_ids.contains(&stream_id), EStreamNotExisted);
 
         // 2.2 payer 结算，并得到结算的时间点 last_upate
-        let last_upate =settlement(payer_pool, clock);
+        let (last_upate, _owe) =settlement(payer_pool, clock);
 
         // 2.3 recipient 领取截止到 last_upate 的工资
         let delta = last_upate - last_settlement_time;
@@ -225,10 +286,21 @@ module stream_pay::liner_pay {
         transfer::public_transfer(income_coin.into_coin(ctx), recipient);
         
         // 3.删除支付流
-        payer_pool.stream_ids.remove(&streamId);
+        payer_pool.stream_ids.remove(&stream_id);
 
         // 4.扣除支付总额
         payer_pool.p_total_paid_amount_per = payer_pool.p_total_paid_amount_per - amount_per_sec;
+
+        event::emit(StreamAction {
+            stream_id,
+            action_type: utf8(b"cancle stream"),
+            payer: payer_pool.owner,
+            p_total_paid_amount_per: payer_pool.p_total_paid_amount_per,
+            p_last_settlement_time: payer_pool.p_last_settlement_time,
+            recipient,
+            r_amount_per: amount_per_sec,
+            r_last_settlement_time: last_settlement_time,
+        });
     }
 
 
@@ -241,8 +313,6 @@ module stream_pay::liner_pay {
     use std::debug;
     #[test_only]
     use sui::clock;
-    #[test_only]
-    use std::string::{utf8};
 
     #[test]
     fun test_liner_pay() {
