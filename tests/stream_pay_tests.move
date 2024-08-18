@@ -1,28 +1,38 @@
-#[test_only]
-module stream_pay::stream_pay_tests {
-    // uncomment this line to import the module
-    // use stream_pay::stream_pay;
+// #[test_only]
+// module stream_pay::liner_pay_tests {
 
-    #[test_only]
-    use sui::test_scenario;
+//     use stream_pay::liner_pay::{Self, PayerPool};
+//     use sui::coin;
+//     use sui::sui::SUI;
 
-    const ENotImplemented: u64 = 0;
-
-    #[test_only]
-    public struct TokenA has drop {}
-    
+//     #[test_only]
+//     use sui::test_scenario;
 
 
-    // #[test]
-    // fun test_borrow() {
-    //     let owner: address = @100;
-    //     let alice: address = @101;
+//     #[test]
+//     fun test_createAndDeposit() {
+//         let owner: address = @100;
+//         let alice: address = @101;
 
-    //     let mut scenario = test_scenario::begin(owner);
-    // }
+//         let mut scenario = test_scenario::begin(owner);
+//         {
+//             let my_coin = coin::mint_for_testing<SUI>(100, scenario.ctx());
+//             liner_pay::createAndDeposit(my_coin, scenario.ctx());
+//             let payer_pool = scenario.take_from_sender<PayerPool>();
 
-    // #[test, expected_failure(abort_code = ::stream_pay::stream_pay_tests::ENotImplemented)]
-    // fun test_stream_pay_fail() {
-    //     abort ENotImplemented
-    // }
-}
+//             assert(payer_pool.p_balance == 100);
+//             assert(payer_pool.p_debt == 0);
+//             assert(payer_pool.owner == owner);
+//             assert(payer_pool.stream_ids == vec![]);
+//             assert(payer_pool.p_last_settlement_time == 0);
+//             assert(payer_pool.p_total_paid_amount_per == 0);
+//         }
+
+
+//     }
+
+//     // #[test, expected_failure(abort_code = ::stream_pay::stream_pay_tests::ENotImplemented)]
+//     // fun test_stream_pay_fail() {
+//     //     abort ENotImplemented
+//     // }
+// }

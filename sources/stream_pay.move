@@ -1,6 +1,6 @@
 module stream_pay::liner_pay {
 
-    use sui::coin::Coin;
+    use sui::coin::{Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
     use sui::clock::Clock;
@@ -16,6 +16,7 @@ module stream_pay::liner_pay {
 
     // todo envent 
 
+    // description：按秒维度支付工资
     
     // 支付者池子，存储支付金额信息
     public struct PayerPool has key, store{
@@ -100,7 +101,7 @@ module stream_pay::liner_pay {
             payer: payer_pool.owner,
             recipient: recipient,
             r_amount_per: amount_per_sec,
-            r_last_settlement_time: clock.timestamp_ms(),
+            r_last_settlement_time: clock.timestamp_ms()/1000,
         };
         transfer::transfer(reciver_card, recipient);
 
@@ -131,7 +132,7 @@ module stream_pay::liner_pay {
     }
 
     fun settlement(payer_pool: &mut PayerPool, clock: &Clock): u64 {
-        let delta = clock.timestamp_ms() - payer_pool.p_last_settlement_time;
+        let delta = clock.timestamp_ms()/1000 - payer_pool.p_last_settlement_time;
         // 计算应支付的费用
         let ready_pay  = delta * payer_pool.p_total_paid_amount_per;
 
@@ -140,7 +141,7 @@ module stream_pay::liner_pay {
         if (payer_pool.p_balance.value() >= ready_pay) {
             let ready_pay_coin = payer_pool.p_balance.split(ready_pay);
             payer_pool.p_debt.join(ready_pay_coin);
-            payer_pool.p_last_settlement_time = clock.timestamp_ms();
+            payer_pool.p_last_settlement_time = clock.timestamp_ms()/1000;
         } else {
             // 计算能够支付多少秒的总费用
             let timePaid = payer_pool.p_balance.value() / payer_pool.p_total_paid_amount_per;
@@ -162,7 +163,7 @@ module stream_pay::liner_pay {
     public entry fun getPayerBalance(payer_pool: &PayerPool, clock: &Clock): u64 {
         // 结算前余额
         let p_balance = payer_pool.p_balance.value();
-        let delta = clock.timestamp_ms() - payer_pool.p_last_settlement_time;
+        let delta = clock.timestamp_ms()/1000 - payer_pool.p_last_settlement_time;
         // 计算应支付的费用
         let ready_pay = delta * payer_pool.p_total_paid_amount_per;
 
@@ -183,7 +184,7 @@ module stream_pay::liner_pay {
         
         // 提取后的余额要满足结算要求
         let withdraw_coin = payer_pool.p_balance.split(amount);
-        let delta = clock.timestamp_ms() - payer_pool.p_last_settlement_time;
+        let delta = clock.timestamp_ms()/1000 - payer_pool.p_last_settlement_time;
         assert!(payer_pool.p_balance.value() >= delta * payer_pool.p_total_paid_amount_per, EDoNotRug);
 
         // 提取后的余额转入到 payer 账户
@@ -195,7 +196,7 @@ module stream_pay::liner_pay {
         // 必须是 payer owner 才可以提取，因为 payer 是共享对象，因此需要显式控制权限
         assert!(payer_pool.owner == ctx.sender(), ENotAuth);
 
-        let delta = clock.timestamp_ms() - payer_pool.p_last_settlement_time;
+        let delta = clock.timestamp_ms()/1000 - payer_pool.p_last_settlement_time;
         assert!(payer_pool.p_balance.value() >= delta * payer_pool.p_total_paid_amount_per, EDoNotRug);
 
         let withdraw_amount = payer_pool.p_balance.value() - (delta * payer_pool.p_total_paid_amount_per);
@@ -228,5 +229,185 @@ module stream_pay::liner_pay {
 
         // 4.扣除支付总额
         payer_pool.p_total_paid_amount_per = payer_pool.p_total_paid_amount_per - amount_per_sec;
+    }
+
+
+
+    #[test_only]
+    use sui::test_scenario;
+    #[test_only]
+    use sui::coin;
+    #[test_only]
+    use std::debug;
+    #[test_only]
+    use sui::clock;
+    #[test_only]
+    use std::string::{utf8};
+
+    #[test]
+    fun test_createAndDeposit() {
+        let alice: address = @100;
+        let bob: address = @101;
+        let eve: address = @102;
+
+        // test createAndDeposit
+        let mut scenario = test_scenario::begin(alice);
+        {
+            let my_coin = coin::mint_for_testing<SUI>(100 * 10000, scenario.ctx());
+            createAndDeposit(my_coin, scenario.ctx());
+        };
+
+        scenario.next_tx(alice);
+
+        // test createStream
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            assert!(payer_pool.p_balance.value() == 100 * 10000, 0);
+            assert!(payer_pool.p_debt.value() == 0, 1);
+            assert!(payer_pool.owner == alice, 2);
+            let len = payer_pool.stream_ids.size();
+            debug::print(&len);
+            assert!(payer_pool.stream_ids.is_empty(), 3);
+            assert!(payer_pool.p_last_settlement_time == 0, 4);
+            assert!(payer_pool.p_total_paid_amount_per == 0, 5);
+
+
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 10);
+            createStream(&mut payer_pool, bob, 1, &my_clock, scenario.ctx());
+            test_scenario::return_shared<PayerPool>(payer_pool);
+            my_clock.destroy_for_testing();
+        };
+
+        scenario.next_tx(bob);
+
+        {
+            let payer_pool = scenario.take_shared<PayerPool>();
+            let reciver_card = scenario.take_from_sender<ReciverCard>();
+
+            // streamId
+            let stream_id = getStreamId(alice, bob, 1);
+            debug::print(&utf8(b"stream_id"));
+            debug::print(&stream_id);
+            assert!(payer_pool.stream_ids.contains(&stream_id), 6);
+
+            // reciver card
+            assert!(reciver_card.payer == alice, 7);
+            assert!(reciver_card.recipient == bob, 8);
+            assert!(reciver_card.r_last_settlement_time == 10, 9);
+            assert!(reciver_card.r_amount_per == 1, 10);
+
+            // payer pool total
+            assert!(payer_pool.p_total_paid_amount_per == 1, 11);
+            assert!(payer_pool.p_last_settlement_time == 10, 12);
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<ReciverCard>(reciver_card);
+
+        };
+
+        scenario.next_tx(bob);
+
+        // test withdraw
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            let mut reciver_card = scenario.take_from_sender<ReciverCard>();
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 20);
+            withdraw(&mut payer_pool, &mut reciver_card, 1, &my_clock, scenario.ctx());
+            my_clock.destroy_for_testing();
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<ReciverCard>(reciver_card);
+        };
+
+        scenario.next_tx(bob);
+
+        {
+            let payer_pool = scenario.take_shared<PayerPool>();
+            let reciver_card = scenario.take_from_sender<ReciverCard>();
+            
+            let p_balance = payer_pool.p_balance.value();
+            debug::print(&utf8(b"p_balance"));
+            debug::print(&p_balance);
+            assert!(payer_pool.p_last_settlement_time == 20, 13);
+            
+            let p_debt = payer_pool.p_debt.value();
+            debug::print(&utf8(b"p_debt"));
+            debug::print(&p_debt);
+
+            let bob_coin = scenario.take_from_sender<Coin<SUI>>();
+            let bob_coin_amout = bob_coin.value();
+            debug::print(&utf8(b"bob_coin_amout"));
+            debug::print(&bob_coin_amout);
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<ReciverCard>(reciver_card);
+            scenario.return_to_sender<Coin<SUI>>(bob_coin);
+        };
+
+        scenario.next_tx(alice);
+
+        // test eve createStream
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 30);
+            createStream(&mut payer_pool, eve, 1, &my_clock, scenario.ctx());
+            test_scenario::return_shared<PayerPool>(payer_pool);
+            my_clock.destroy_for_testing();
+        };
+
+        scenario.next_tx(eve);
+        // eve withdraw
+        {
+            let mut payer_pool = scenario.take_shared<PayerPool>();
+            let mut reciver_card = scenario.take_from_sender<ReciverCard>();
+            let mut my_clock = clock::create_for_testing(scenario.ctx());
+            my_clock.set_for_testing(1000 * 40);
+            withdraw(&mut payer_pool, &mut reciver_card, 1, &my_clock, scenario.ctx());
+            my_clock.destroy_for_testing();
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender<ReciverCard>(reciver_card);
+        };
+
+        scenario.next_tx(eve);
+
+        {
+            let payer_pool = scenario.take_shared<PayerPool>();
+            let eve_reciver_card = scenario.take_from_sender<ReciverCard>();
+            debug::print(&utf8(b"---------------------------------------"));
+
+            let p_last_settlement_time = payer_pool.p_last_settlement_time;
+            debug::print(&utf8(b"payer p_last_settlement_time"));
+            debug::print(&p_last_settlement_time);
+            assert!(p_last_settlement_time == 40, 13);
+
+            let p_balance = payer_pool.p_balance.value();
+            debug::print(&utf8(b"40s p_balance"));
+            debug::print(&p_balance);
+            assert!(p_balance == (100 * 10000 - 40), 13);
+            
+            let p_debt = payer_pool.p_debt.value();
+            debug::print(&utf8(b"40s p_debt 欠 bob"));
+            debug::print(&p_debt);
+            assert!(p_debt == 20, 14);
+
+            let eve_coin = scenario.take_from_sender<Coin<SUI>>();
+            let eve_coin_amout = eve_coin.value();
+            debug::print(&utf8(b"eve_coin_amout"));
+            debug::print(&eve_coin_amout);
+            assert!(eve_coin_amout == 10, 15);
+
+            let eve_last_update = eve_reciver_card.r_last_settlement_time;
+            assert!(eve_last_update == 40, 16);
+
+            test_scenario::return_shared(payer_pool);
+            scenario.return_to_sender(eve_reciver_card);
+            scenario.return_to_sender<Coin<SUI>>(eve_coin);
+        };
+
+        scenario.end();
     }
 }
