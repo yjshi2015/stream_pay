@@ -1,13 +1,13 @@
-// #[test_only]
-// module stream_pay::liner_pay_tests {
+#[test_only]
+module stream_pay::liner_pay_tests {
 
 //     use stream_pay::liner_pay::{Self, PayerPool};
 //     use sui::coin;
 //     use sui::sui::SUI;
 
-//     #[test_only]
-//     use sui::test_scenario;
-
+    #[test_only]
+    use sui::test_scenario;
+    use std::debug;
 
 //     #[test]
 //     fun test_createAndDeposit() {
@@ -31,8 +31,15 @@
 
 //     }
 
-//     // #[test, expected_failure(abort_code = ::stream_pay::stream_pay_tests::ENotImplemented)]
-//     // fun test_stream_pay_fail() {
-//     //     abort ENotImplemented
-//     // }
-// }
+    #[test]
+    fun test_stream_pay_fail() {
+        let owner: address = @100;
+        let mut scenario = test_scenario::begin(owner);
+
+        let objId = object::new(scenario.ctx());
+        debug::print(&objId.to_inner());
+        debug::print(&objId.to_address());
+        object::delete(objId);
+        scenario.end();
+    }
+}

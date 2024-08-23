@@ -1,7 +1,11 @@
 # stream_pay
 
+## call createPayPoolAndStream 
+sui client call --function createPayPoolAndStream --package 0xa60804309db3c87d785ecee5fcdab72aacc13aa567275e2b4d54f5bbf15f525d --module liner_pay --args 0x1dd33236e70b8cb34f8099a94dab2a70b286848bafd8cfcecea6010b01c0f1b6 "[0x961d00737596a517b1b1e519b47bf0bf100c51fcb40427f197d14268ebd5a6ee]" "[1]" 0x6
+
+
 ## call createAndDeposit  alice
-sui client call --function createAndDeposit --package 0x8096b927f041dbcb156aa0dfa8e6804fe8c9383d9ed15dee5fae5c2d70cd7dd7 --module liner_pay --args 0xb8fd6e228af21542b9f043a052ac9d48b66e4901ef39a1a442a29a16678bf1b9
+sui client call --function createAndDeposit --package 0x29379cc662cd00266b9bb87db9cadfdafd1bd5215bc4b3dc9779653a66e01a0e --module liner_pay --args 0x834ed47a1d853f122dbba3913ae0c37ebeff08b3f0b4396943d5194bcc51ff44
 
 Transaction Digest: G5EwZLahMasHyab7xjk9NU6Lu6viSBEkVDEV1hQPULYP
 

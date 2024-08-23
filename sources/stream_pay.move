@@ -10,6 +10,7 @@ module stream_pay::liner_pay {
     use sui::event;
     use std::string::{String, utf8};
 
+    const ELenNotEqual: u64 = 0;
     const EStreamExisted: u64 = 1;
     const EAmountPerSecInvalid: u64 = 2;
     const EStreamNotExisted: u64 = 3;
@@ -81,8 +82,32 @@ module stream_pay::liner_pay {
         owe: bool,
     }
 
+    public entry fun createPayPoolAndStream(amount: Coin<SUI>, recipients: vector<address>, amount_per_sec_vec: vector<u64>, clock: &Clock, ctx: &mut TxContext) {
+        assert!(recipients.length() == amount_per_sec_vec.length(), ELenNotEqual);
+
+        let mut payer_pool = PayerPool {
+            id: object::new(ctx),
+            p_balance: amount.into_balance(),
+            p_debt: balance::zero(),
+            owner: ctx.sender(),
+            stream_ids: vec_set::empty(),
+            p_last_settlement_time: 0,
+            p_total_paid_amount_per: 0,
+        };
+
+        event::emit(CreatePayerPool { pool_id: payer_pool.id.to_inner(), owner: payer_pool.owner });
+        
+        let mut i = 0;
+        while(i < recipients.length()) {
+            createStream(&mut payer_pool, recipients[i], amount_per_sec_vec[i], clock, ctx);
+            i = i + 1;
+        };
+
+        transfer::share_object(payer_pool);
+    }
+
     // step1 创建 Payer Pool 并预存薪资
-    public entry fun createAndDeposit(amount: Coin<SUI>, ctx: &mut TxContext) {
+    public fun createAndDeposit(amount: Coin<SUI>, ctx: &mut TxContext): address {
         let payer_pool = PayerPool {
             id: object::new(ctx),
             p_balance: amount.into_balance(),
@@ -94,8 +119,12 @@ module stream_pay::liner_pay {
         };
 
         event::emit(CreatePayerPool { pool_id: payer_pool.id.to_inner(), owner: payer_pool.owner });
+        
+        let payer_pool_address = payer_pool.id.to_address();
 
         transfer::share_object(payer_pool);
+
+        payer_pool_address
     }
 
     // 获取支付流的哈希，作为唯一标识
@@ -110,7 +139,7 @@ module stream_pay::liner_pay {
     }
 
     // step2 payer 创建自动支付流，用于为 recipient 支付工资
-    public entry fun createStream(payer_pool: &mut PayerPool, recipient: address, amount_per_sec: u64, clock: &Clock, ctx: &mut TxContext) {
+    public fun createStream(payer_pool: &mut PayerPool, recipient: address, amount_per_sec: u64, clock: &Clock, ctx: &mut TxContext): address {
         // 必须是 payer owner 才可以创建支付流，因为 payer 是共享对象，因此需要显式控制权限
         assert!(payer_pool.owner == ctx.sender(), ENotAuth);
         // 每秒支付的工资必须大于 0
@@ -133,6 +162,7 @@ module stream_pay::liner_pay {
             r_amount_per: amount_per_sec,
             r_last_settlement_time,
         };
+        let reciver_card_address = reciver_card.id.to_address();
         transfer::transfer(reciver_card, recipient);
 
         // payer 先结算
@@ -151,6 +181,8 @@ module stream_pay::liner_pay {
             r_amount_per: amount_per_sec,
             r_last_settlement_time: r_last_settlement_time,
         });
+
+        reciver_card_address
     }
 
     // step3 雇员领取工资
