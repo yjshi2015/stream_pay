@@ -4,6 +4,8 @@ Sui Nova is a liquidity management and payment protocol specifically designed fo
 
 # Why Sui Nova
 
+![Alt text](image.png)
+
 With the rapid development of blockchain technology and the flourishing DeFi ecosystem, more users and businesses are turning to cryptocurrencies for payments. However, the current payment methods are typically based on one-time transactions, which are not ideal for scenarios requiring regular payments, such as salary disbursements, subscription services, and loan repayments. Additionally, traditional cryptocurrency payment processes often suffer from complexities, high fees, and a lack of transparency.
 
 Sui Nova was created to tackle these challenges. Through Sui Nova, users can easily set up and manage recurring payments in a fully decentralized environment, ensuring transparency and automation in the payment process. This lowers the barriers to entry and enhances the efficiency and security of payments.
