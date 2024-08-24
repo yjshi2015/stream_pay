@@ -1,5 +1,9 @@
 # stream_pay
 
+# mainnet packageId : 0xa769a20c9b8e80078bdad52ce1a2ecc4fb0d7c8df815e3b089bb6893913042e5
+# Digest: HvdkDmgjy8jdiXosTH9etjUwrvmE7fXrdC66bntVk1ZA
+
+
 ## call createPayPoolAndStream 
 sui client call --function createPayPoolAndStream --package 0xa60804309db3c87d785ecee5fcdab72aacc13aa567275e2b4d54f5bbf15f525d --module liner_pay --args 0x1dd33236e70b8cb34f8099a94dab2a70b286848bafd8cfcecea6010b01c0f1b6 "[0x961d00737596a517b1b1e519b47bf0bf100c51fcb40427f197d14268ebd5a6ee]" "[1]" 0x6
 
