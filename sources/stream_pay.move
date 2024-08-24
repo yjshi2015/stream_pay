@@ -17,9 +17,6 @@ module stream_pay::liner_pay {
     const EDoNotRug: u64 = 4;
     const ENotAuth: u64 = 5;
 
-
-
-    // description：按秒维度支付工资
     
     // 支付者池子，存储支付金额信息
     public struct PayerPool has key, store{
